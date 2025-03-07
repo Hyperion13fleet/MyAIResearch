@@ -1,3 +1,4 @@
+"use client"
 import { motion } from "framer-motion"
 import { Home } from "lucide-react"
 import { MAIN_COLOR, SUB_COLOR } from "./VideoAnalyser"

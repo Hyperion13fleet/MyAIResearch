@@ -1,7 +1,7 @@
 "use client"
 
 import type React from "react"
-import { useState, type DragEvent } from "react"
+import { useState, useEffect, type DragEvent } from "react"
 import { motion } from "framer-motion"
 import { Film, Upload, FileText } from "lucide-react"
 import { MAIN_COLOR, SUB_COLOR } from "./VideoAnalyser"
@@ -26,60 +26,124 @@ export default function AnalysisPage() {
   const [confidenceThreshold, setConfidenceThreshold] = useState(0.5)
   const [activePlanIndex, setActivePlanIndex] = useState(0)
   const [isDragOver, setIsDragOver] = useState(false)
+  const [jobId, setJobId] = useState<string | null>(null)
 
-  const mockAnalyzeVideo = (): AnalysisRow[] => {
-    // ... (既存のmockAnalyzeVideo関数をここに配置)
-  }
+  // API endpoint configuration
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
-  const startAnalysis = (file: File) => {
-    setSelectedVideo(file)
-    setIsAnalyzing(true)
-    setAnalysisResults([])
-    setProgress(0)
+  useEffect(() => {
+    // Poll for progress updates when a job is running
+    if (!jobId || !isAnalyzing) return;
 
-    let progressValue = 0
-    const interval = setInterval(() => {
-      progressValue += 10
-      if (progressValue <= 100) {
-        setProgress(progressValue)
-      } else {
-        clearInterval(interval)
-        setIsAnalyzing(false)
-        const allCandidates: AnalysisRow[][] = []
-        for (let i = 0; i < analysisPlans; i++) {
-          allCandidates.push(mockAnalyzeVideo())
+    const interval = setInterval(async () => {
+      try {
+        const response = await fetch(`${API_BASE_URL}/api/progress/${jobId}`);
+        
+        if (!response.ok) {
+          throw new Error(`API error: ${response.status}`);
         }
-        setAnalysisResults(allCandidates)
+        
+        const data = await response.json();
+        setProgress(data.progress);
+        
+        // Check if analysis is complete
+        if (data.progress >= 100) {
+          clearInterval(interval);
+          fetchResults();
+        }
+      } catch (error) {
+        console.error("Error fetching progress:", error);
       }
-    }, 300)
-  }
+    }, 1000);
+
+    return () => clearInterval(interval);
+  }, [jobId, isAnalyzing]);
+
+  const fetchResults = async () => {
+    if (!jobId) return;
+    
+    try {
+      const response = await fetch(`${API_BASE_URL}/api/results/${jobId}`);
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setAnalysisResults(data.results);
+      setIsAnalyzing(false);
+      
+    } catch (error) {
+      console.error("Error fetching results:", error);
+      setIsAnalyzing(false);
+    }
+  };
+
+  const startAnalysis = async (file: File) => {
+    setSelectedVideo(file);
+    setIsAnalyzing(true);
+    setAnalysisResults([]);
+    setProgress(0);
+    
+    try {
+      // Create form data to send files and parameters
+      const formData = new FormData();
+      formData.append('video', file);
+      
+      if (useReferenceFile && referenceFile) {
+        formData.append('reference_file', referenceFile);
+      }
+      
+      formData.append('plans', analysisPlans.toString());
+      formData.append('system_prompt', systemPrompt);
+      formData.append('confidence_threshold', confidenceThreshold.toString());
+      
+      // Send request to API
+      const response = await fetch(`${API_BASE_URL}/api/analyze`, {
+        method: 'POST',
+        body: formData,
+        // No need to set Content-Type as it's automatically set for FormData
+      });
+      
+      if (!response.ok) {
+        throw new Error(`API error: ${response.status}`);
+      }
+      
+      const data = await response.json();
+      setJobId(data.job_id);
+      
+    } catch (error) {
+      console.error("Error starting analysis:", error);
+      setIsAnalyzing(false);
+    }
+  };
 
   const handleVideoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (!e.target.files) return
-    const file = e.target.files[0]
+    if (!e.target.files) return;
+    const file = e.target.files[0];
     if (file) {
-      startAnalysis(file)
+      startAnalysis(file);
     }
-  }
+  };
 
   const handleDragOver = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(true)
-  }
+    e.preventDefault();
+    setIsDragOver(true);
+  };
 
   const handleDragLeave = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
-  }
+    e.preventDefault();
+    setIsDragOver(false);
+  };
 
   const handleDrop = (e: DragEvent<HTMLDivElement>) => {
-    e.preventDefault()
-    setIsDragOver(false)
+    e.preventDefault();
+    setIsDragOver(false);
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-      const file = e.dataTransfer.files[0]
-      startAnalysis(file)
+      const file = e.dataTransfer.files[0];
+      startAnalysis(file);
     }
-  }
+  };
 
   return (
     <div className="w-full h-full flex flex-col items-center" style={{ backgroundColor: SUB_COLOR }}>
@@ -94,7 +158,7 @@ export default function AnalysisPage() {
       >
         <Film size={32} className="text-white" />
         <div>
-          <h1 className="text-2xl font-bold text-white">ビデオ分析</h1>
+          <h1 className="text-2xl font-bold text-white">ビデオ分析X</h1>
           <p className="text-white mt-1">アップロードした動画の内容を分析し、インテリジェントなプランを提案します。</p>
         </div>
       </motion.div>
